@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,7 +18,9 @@ public class MoneyLaundering
     private TransactionAnalyzer transactionAnalyzer;
     private TransactionReader transactionReader;
     private int amountOfFilesTotal;
-    private AtomicInteger amountOfFilesProcessed;
+    public  static AtomicInteger amountOfFilesProcessed;
+    private static int numBigFiles = 3 ;
+    private static int numHilos = 5;
 
     public MoneyLaundering()
     {
@@ -26,22 +29,7 @@ public class MoneyLaundering
         amountOfFilesProcessed = new AtomicInteger();
     }
 
-    public void processTransactionData()
-    {
-        amountOfFilesProcessed.set(0);
-        List<File> transactionFiles = getTransactionFileList();
-        amountOfFilesTotal = transactionFiles.size();
-        for(File transactionFile : transactionFiles)
-        {            
-            List<Transaction> transactions = transactionReader.readTransactionsFromFile(transactionFile);
-            for(Transaction transaction : transactions)
-            {
-                transactionAnalyzer.addTransaction(transaction);
-            }
-            amountOfFilesProcessed.incrementAndGet();
-        }
-    }
-
+    
     public List<String> getOffendingAccounts()
     {
         return transactionAnalyzer.listOffendingAccounts();
@@ -57,14 +45,58 @@ public class MoneyLaundering
         }
         return csvFiles;
     }
+    
+    public void divideData(){
+        amountOfFilesProcessed.set(0);
+        List<File> transactionFiles = getTransactionFileList();
+        amountOfFilesTotal = transactionFiles.size();
+        Collections.sort(transactionFiles,new ComparaFile());
+        List<File> transactionFilter = new ArrayList<File>();
+        List<TransactionProccesor> hilos = new ArrayList<TransactionProccesor>();
+        for(int i=0; i<numBigFiles;i++){
+            transactionFilter.add(transactionFiles.get(transactionFiles.size()-1));
+            transactionFiles.remove(transactionFiles.size()-1);
+            hilos.add(new TransactionProccesor(transactionFilter,transactionAnalyzer));
+            hilos.get(hilos.size()-1).start();
+            transactionFilter = new ArrayList<File>();
+            
+        }
+        int numDiv = transactionFiles.size()/numHilos;
+        
+        int i = numDiv;
+        while(i<transactionFiles.size()){
+            for(int j=i-numDiv;j<i;j++){
+                transactionFilter.add(transactionFiles.get(j));
+            }
+            hilos.add(new TransactionProccesor(transactionFilter,transactionAnalyzer));
+            hilos.get(hilos.size()-1).start();
+            transactionFilter = new ArrayList<File>();
+            i+=numDiv;
+        }
+        if(i!=transactionFiles.size()){
+            for(int j=i-numDiv;j<transactionFiles.size();j++){
+                transactionFilter.add(transactionFiles.get(j));
+            }
+            hilos.add(new TransactionProccesor(transactionFilter,transactionAnalyzer));
+            hilos.get(hilos.size()-1).start();
+            
+        }
+        
+        
+        
+        
+    }
 
     public static void main(String[] args)
     {
         System.out.println(getBanner());
         System.out.println(getHelp());
         MoneyLaundering moneyLaundering = new MoneyLaundering();
-        Thread processingThread = new Thread(() -> moneyLaundering.processTransactionData());
+        //Thread processingThread = new Thread(() -> moneyLaundering.processTransactionData());
+        //processingThread.start();
+        Thread processingThread = new Thread(() -> moneyLaundering.divideData());
         processingThread.start();
+        
         while(true)
         {
             Scanner scanner = new Scanner(System.in);
